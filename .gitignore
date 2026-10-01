@@ -1,6 +1,6 @@
-data/
 __pycache__/
 .ipynb_checkpoints/
 .venv/
+.venv-win/
 
 .DS_Store

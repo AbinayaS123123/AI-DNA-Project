@@ -1,0 +1,2 @@
+trivial_length_gc_accuracy,kmer_model_accuracy,gap,verdict
+0.5277777777777778,1.0,0.4722222222222222,K-mer model exceeds the simple composition baseline.

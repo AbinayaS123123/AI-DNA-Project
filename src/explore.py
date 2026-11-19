@@ -57,7 +57,8 @@ def plot_cluster_projection(df: pd.DataFrame, k: int, out_dir: str, method="pca"
         proj = PCA(n_components=2, random_state=42).fit_transform(X)
         title = f"PCA of {k}-mer counts"
     else:
-        proj = TSNE(n_components=2, random_state=42, perplexity=30,
+        perplexity = min(30, max(2, len(df) - 1))
+        proj = TSNE(n_components=2, random_state=42, perplexity=perplexity,
                     init="pca").fit_transform(X)
         title = f"t-SNE of {k}-mer counts"
 
@@ -108,7 +109,10 @@ def top_discriminative_kmers(df: pd.DataFrame, k: int, top_n=15):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("data/raw/sequences.csv")
+    from data_io import prepare_dataset
+    df, rejected = prepare_dataset(pd.read_csv("data/raw/sequences.csv"))
+    if rejected:
+        print(f"Skipped {rejected} invalid sequences")
     plot_length_gc_distributions(df, "outputs/figures")
     print(vocab_report(df))
     plot_cluster_projection(df, k=4, out_dir="outputs/figures", method="pca")

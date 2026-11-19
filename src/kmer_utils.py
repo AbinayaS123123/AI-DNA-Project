@@ -1,33 +1,35 @@
-"""
-kmer_utils.py
--------------
-Turns DNA/RNA sequences into "words" (k-mers), the core step in
-treating biological sequences as a language.
-"""
-
+"""Safe sequence cleaning and k-mer utilities shared by the pipeline."""
 from collections import Counter
-import re
 
-VALID_BASES = set("ACGT")
+DNA_BASES = frozenset("ACGT")
 
 
 def clean_sequence(seq: str) -> str:
-    """Uppercase, convert RNA->DNA alphabet, strip anything not ACGT."""
-    seq = seq.upper().replace("U", "T")
-    seq = re.sub(r"[^ACGT]", "", seq)
-    return seq
+    """Normalize DNA/RNA without silently joining across ambiguous bases."""
+    if not isinstance(seq, str):
+        raise TypeError("sequence must be a string")
+    return "".join(base if base in DNA_BASES else "N"
+                   for base in seq.upper().replace("U", "T").replace(" ", ""))
+
+
+def validate_sequence(seq: str, min_length: int = 1) -> tuple[bool, str]:
+    cleaned = clean_sequence(seq)
+    if len(cleaned) < min_length:
+        return False, f"sequence is shorter than {min_length} bases"
+    if "N" in cleaned:
+        return False, "sequence contains ambiguous or invalid bases"
+    return True, ""
 
 
 def seq_to_kmers(seq: str, k: int) -> list[str]:
-    """Slide a window of size k across the sequence (overlapping k-mers)."""
+    if not isinstance(k, int) or k < 1:
+        raise ValueError("k must be a positive integer")
     seq = clean_sequence(seq)
-    if len(seq) < k:
-        return []
-    return [seq[i:i + k] for i in range(len(seq) - k + 1)]
+    return [window for i in range(max(0, len(seq) - k + 1))
+            if set(window := seq[i:i + k]) <= DNA_BASES]
 
 
 def seq_to_kmer_string(seq: str, k: int) -> str:
-    """Space-joined k-mers, so sklearn's text vectorizers work directly."""
     return " ".join(seq_to_kmers(seq, k))
 
 
@@ -36,28 +38,16 @@ def kmer_frequency(seq: str, k: int) -> Counter:
 
 
 def vocabulary_size(k: int) -> int:
-    """Theoretical max vocabulary size for alphabet size 4 (A,C,G,T)."""
+    if not isinstance(k, int) or k < 1:
+        raise ValueError("k must be a positive integer")
     return 4 ** k
 
 
 def dataset_vocab_stats(sequences: list[str], k: int) -> dict:
-    """Observed vocabulary size and sparsity for a given k on real data."""
-    all_kmers = Counter()
-    for s in sequences:
-        all_kmers.update(seq_to_kmers(s, k))
-    observed = len(all_kmers)
+    counts = Counter()
+    for sequence in sequences:
+        counts.update(seq_to_kmers(sequence, k))
     theoretical = vocabulary_size(k)
-    return {
-        "k": k,
-        "observed_vocab": observed,
-        "theoretical_vocab": theoretical,
-        "coverage_pct": round(100 * observed / theoretical, 2),
-        "top_10": all_kmers.most_common(10),
-    }
-
-
-if __name__ == "__main__":
-    demo = "ATGCGTATGCGATCGATCGGATCG"
-    for k in [3, 4, 6]:
-        print(f"k={k}: {seq_to_kmers(demo, k)[:5]}... "
-              f"({len(seq_to_kmers(demo, k))} k-mers)")
+    return {"k": k, "observed_vocab": len(counts), "theoretical_vocab": theoretical,
+            "coverage_pct": round(100 * len(counts) / theoretical, 2),
+            "top_10": counts.most_common(10)}

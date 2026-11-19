@@ -1,94 +1,51 @@
-"""
-models.py
----------
-Train and compare classifiers across different sequence representations.
-Uses GROUP-AWARE splitting (by source_group, i.e. simulated species/strain)
-so the test set contains sequence "families" unseen during training --
-this avoids the near-duplicate-leakage trap described in the project plan.
-"""
-
-import numpy as np
+"""Leakage-safe training, evaluation and model comparison."""
 import pandas as pd
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.tree import DecisionTreeClassifier
+import represent
+
+SEED = 42
 
 
-def group_train_test_split(df: pd.DataFrame, test_size=0.25, seed=42):
-    gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
-    train_idx, test_idx = next(gss.split(df, groups=df["source_group"]))
-    return train_idx, test_idx
+def group_train_test_split(df: pd.DataFrame, test_size=0.25, seed=SEED):
+    missing = {"label", "source_group"} - set(df.columns)
+    if missing: raise ValueError(f"dataset is missing required columns: {sorted(missing)}")
+    if df.label.nunique() < 2 or df.source_group.nunique() < 2: raise ValueError("need at least two labels and source groups")
+    for attempt in range(100):
+        splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed + attempt)
+        train_idx, test_idx = next(splitter.split(df, groups=df.source_group))
+        if set(df.iloc[train_idx].label) == set(df.label) and set(df.iloc[test_idx].label) == set(df.label): return train_idx, test_idx
+    raise ValueError("could not create group-separated split containing every class")
 
 
-def train_and_evaluate(X, y, train_idx, test_idx, model_name="logreg"):
-    X_train, X_test = X[train_idx], X[test_idx]
-    y_train, y_test = y[train_idx], y[test_idx]
+def build_model(name):
+    if name == "logreg": return LogisticRegression(max_iter=2000, random_state=SEED)
+    if name == "tree": return DecisionTreeClassifier(max_depth=8, random_state=SEED)
+    if name == "forest": return RandomForestClassifier(n_estimators=100, max_depth=10, random_state=SEED, n_jobs=-1)
+    raise ValueError(f"Unknown model: {name}")
 
-    if model_name == "logreg":
-        clf = LogisticRegression(max_iter=2000)
-    elif model_name == "tree":
-        clf = DecisionTreeClassifier(max_depth=8, random_state=42)
-    elif model_name == "forest":
-        clf = RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42)
-    else:
-        raise ValueError(model_name)
 
-    clf.fit(X_train, y_train)
-    preds = clf.predict(X_test)
-
-    metrics = {
-        "model": model_name,
-        "accuracy": accuracy_score(y_test, preds),
-        "f1": f1_score(y_test, preds, pos_label="viral"),
-    }
-    report = classification_report(y_test, preds)
-    return clf, metrics, report
+def train_and_evaluate(X_train, X_test, y_train, y_test, model_name="logreg"):
+    clf = build_model(model_name).fit(X_train, y_train); predictions = clf.predict(X_test); labels = sorted(set(y_train))
+    precision, recall, f1, _ = precision_recall_fscore_support(y_test, predictions, average="weighted", zero_division=0)
+    return clf, {"model": model_name, "accuracy": accuracy_score(y_test, predictions), "precision_weighted": precision, "recall_weighted": recall, "f1_weighted": f1}, confusion_matrix(y_test, predictions, labels=labels), predictions
 
 
 def run_all_representations(df: pd.DataFrame, k=4):
-    """Compare BoW, TF-IDF, and word2vec-avg embeddings across 3 model types."""
-    import represent
-
-    train_idx, test_idx = group_train_test_split(df)
-    y = df["label"].values
-
-    results = []
-    trained = {}
-
-    # --- Bag of Words ---
-    X_bow, _ = represent.bag_of_words(df, k=k)
-    X_bow = X_bow.toarray()
-    for model_name in ["logreg", "tree", "forest"]:
-        clf, metrics, report = train_and_evaluate(X_bow, y, train_idx, test_idx, model_name)
-        metrics["representation"] = "bag_of_words"
-        results.append(metrics)
-        trained[f"bow_{model_name}"] = clf
-
-    # --- TF-IDF ---
-    X_tfidf, _ = represent.tfidf(df, k=k)
-    X_tfidf = X_tfidf.toarray()
-    for model_name in ["logreg", "tree", "forest"]:
-        clf, metrics, report = train_and_evaluate(X_tfidf, y, train_idx, test_idx, model_name)
-        metrics["representation"] = "tfidf"
-        results.append(metrics)
-        trained[f"tfidf_{model_name}"] = clf
-
-    # --- word2vec-style averaged embedding ---
-    w2v = represent.train_word2vec(df, k=k)
-    X_emb = represent.embed_dataset(df, k=k, w2v_model=w2v)
-    for model_name in ["logreg", "tree", "forest"]:
-        clf, metrics, report = train_and_evaluate(X_emb, y, train_idx, test_idx, model_name)
-        metrics["representation"] = "word2vec_avg"
-        results.append(metrics)
-        trained[f"emb_{model_name}"] = clf
-
-    results_df = pd.DataFrame(results)[["representation", "model", "accuracy", "f1"]]
-    return results_df, trained, (train_idx, test_idx)
-
-
-if __name__ == "__main__":
-    df = pd.read_csv("data/raw/sequences.csv")
-    results_df, trained, splits = run_all_representations(df, k=4)
-    print(results_df.sort_values("accuracy", ascending=False))
+    train_idx, test_idx = group_train_test_split(df); train_df, test_df = df.iloc[train_idx], df.iloc[test_idx]
+    results, trained, artifacts = [], {}, {"train_idx": train_idx, "test_idx": test_idx}
+    for representation in ("bag_of_words", "tfidf"):
+        X_train, X_test, vectorizer = represent.fit_transform_text(train_df, test_df, k, representation)
+        artifacts[representation] = {"vectorizer": vectorizer, "X_train": X_train, "X_test": X_test}
+        for name in ("logreg", "tree", "forest"):
+            clf, metrics, matrix, _ = train_and_evaluate(X_train, X_test, train_df.label, test_df.label, name)
+            metrics["representation"] = representation; results.append(metrics); trained[f"{representation}_{name}"] = clf; artifacts[f"{representation}_{name}_cm"] = matrix
+    X_train, X_test, embedder, vectorizer = represent.fit_transform_svd_embedding(train_df, test_df, k)
+    artifacts["svd_embedding"] = {"embedder": embedder, "vectorizer": vectorizer}
+    for name in ("logreg", "tree", "forest"):
+        clf, metrics, matrix, _ = train_and_evaluate(X_train, X_test, train_df.label, test_df.label, name)
+        metrics["representation"] = "svd_embedding"; results.append(metrics); trained[f"svd_embedding_{name}"] = clf; artifacts[f"svd_embedding_{name}_cm"] = matrix
+    return pd.DataFrame(results), trained, artifacts

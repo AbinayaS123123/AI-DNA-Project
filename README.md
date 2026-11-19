@@ -1,10 +1,22 @@
 # Can AI Understand the Language of DNA/RNA?
 ### Human vs. Viral sequence classification — working pipeline
 
-This is a full, runnable pipeline for the course project: treating DNA as a
-four-letter language, tokenizing it into k-mer "words," applying NLP-style
-representations, training classifiers, and checking whether the model
-learned something real or just a shortcut.
+This is a runnable, lightweight course-project pipeline: DNA/RNA is treated as
+a four-letter language, tokenized into k-mer "words", and evaluated with
+leakage-safe classical ML. It deliberately avoids deep learning.
+
+## What is implemented
+
+- Group-separated, fixed-seed train/test splits. K-mer vocabularies, TF-IDF
+  weights, and dense SVD sequence embeddings are fitted on training data only.
+- Bag-of-words, TF-IDF, and lightweight dense embedding comparisons with
+  logistic regression, decision tree, and random forest.
+- Held-out accuracy, weighted precision/recall/F1, CSV confusion matrices,
+  feature-importance k-mer tables, and a length/GC-content shortcut baseline.
+- Safe DNA/RNA normalization (`U` becomes `T`); ambiguous characters do not get
+  silently joined into artificial k-mers and are rejected by dataset validation.
+- A small FASTA loader for real data. It does not assign labels: you provide a
+  label and provenance group, so synthetic and real results remain distinct.
 
 ## ⚠️ Important: this ships with SYNTHETIC data, not real NCBI sequences
 
@@ -25,19 +37,24 @@ sensible results (see `outputs/results/` and `outputs/figures/`), but it is
 about DNA/RNA sequence patterns. Swap in real data before you write up
 results — see below.
 
-## How to swap in real data
+## How to use real data
 
 1. Download real sequences yourself (this typically works outside this
    sandbox):
    - Human: [NCBI GRCh38 reference genome](https://www.ncbi.nlm.nih.gov/data-hub/genome/GCF_000001405.40/) or [UCSC Genome Browser](https://genome.ucsc.edu/) — chop into random windows.
    - Viral: [NCBI Virus](https://www.ncbi.nlm.nih.gov/labs/virus/vssi/) — download complete genomes across many viral families.
-2. Write a loader that produces a DataFrame with columns:
+2. Convert each labelled FASTA file, using a biologically meaningful source
+   group (species, strain, or chromosome; never a class name):
+
+```bash
+python src/fasta_to_csv.py human.fasta --label human --source-group GRCh38 --output data/real/human.csv
+```
+
+Combine the resulting CSVs into one file with columns:
    `seq_id, sequence, label, source_group` (source_group = species/strain/
    chromosome, used for leakage-safe splitting — see `models.py`).
-3. Replace the two `generate_class_sequences(...)` calls in
-   `build_dataset()` inside `src/generate_synthetic_data.py` with your
-   loader, or just write a new script that outputs the same CSV shape to
-   `data/raw/sequences.csv`. Nothing else in the pipeline needs to change.
+3. Run the pipeline against the combined file. Do not interpret the synthetic
+   baseline as evidence about real genomes.
 
 Tip: keep windows a consistent length across classes, and split train/test
 by `source_group` (already implemented in `models.py`) so the model can't
@@ -64,9 +81,20 @@ dna_ai_project/
 ## How to run
 
 ```bash
-pip install scikit-learn pandas numpy matplotlib gensim scipy
-python run_pipeline.py
+pip install numpy pandas scikit-learn matplotlib
+# preserve the shipped data and evaluate it
+python run_pipeline.py --data data/raw/sequences.csv
+# explicitly regenerate the documented synthetic baseline, then run it
+python run_pipeline.py --regenerate-synthetic
+# run unit tests
+python -m unittest discover -s tests -v
 ```
+
+The pipeline writes comparison and interpretation tables to `outputs/results/`
+and the best model's held-out confusion matrix to `outputs/figures/`. The
+legacy CSV has no biological provenance, so it receives record-level groups;
+this prevents exact record overlap but cannot establish near-duplicate safety.
+For real data, supply genuine `source_group` values.
 
 Each module also runs standalone (`python src/explore.py`, etc.) once
 `data/raw/sequences.csv` exists.
@@ -77,7 +105,7 @@ Each module also runs standalone (`python src/explore.py`, etc.) once
 |---|---|
 | 1. Represent DNA as language (k-mers) | `kmer_utils.py` |
 | 2. Explore the sequence language | `explore.py` (vocab stats, PCA/t-SNE) |
-| 3. NLP representations (BoW/TF-IDF/word2vec) | `represent.py` |
+| 3. NLP representations (BoW/TF-IDF/dense SVD embedding) | `represent.py` |
 | 4. Build AI/ML models | `models.py` (logreg, decision tree, random forest × 3 representations) |
 | 5. What did the AI learn? | `interpret.py` (top features + artifact check) |
 | 6. AI-generated explanations | not automated — feed `outputs/results/top_kmers_frequency_ratio.csv` to an LLM yourself and compare/verify (see project write-up) |
@@ -107,5 +135,5 @@ Each module also runs standalone (`python src/explore.py`, etc.) once
 - No true "coding vs. non-coding" distinction is modeled — flagged in the
   main conversation as a likely real confound for human vs. viral data;
   check for it once you have real sequences.
-- word2vec was trained on this dataset only; with real data consider a
-  larger training corpus for k-mer embeddings.
+- The dense embedding is trained only on the training partition. It is a
+  lightweight SVD baseline, not a biological foundation model.

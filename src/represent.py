@@ -1,76 +1,40 @@
-"""
-represent.py
-------------
-NLP-style representations of DNA/RNA "sentences" (sequences) made of
-"words" (k-mers): Bag-of-Words, TF-IDF, and word2vec-style embeddings
-averaged into a sequence-level vector (like a document embedding).
-"""
-
-import numpy as np
+"""Leakage-safe representations: fit vocabulary/embeddings on training data only."""
 import pandas as pd
+from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from gensim.models import Word2Vec
-
-from kmer_utils import seq_to_kmer_string, seq_to_kmers
+from kmer_utils import seq_to_kmer_string
 
 
-def bag_of_words(df: pd.DataFrame, k: int, max_features=2000):
-    kmer_strings = df["sequence"].apply(lambda s: seq_to_kmer_string(s, k))
-    vec = CountVectorizer(lowercase=False, max_features=max_features)
-    X = vec.fit_transform(kmer_strings)
-    return X, vec
+def kmer_documents(df: pd.DataFrame, k: int) -> list[str]:
+    return [seq_to_kmer_string(sequence, k) for sequence in df["sequence"]]
 
 
-def tfidf(df: pd.DataFrame, k: int, max_features=2000):
-    kmer_strings = df["sequence"].apply(lambda s: seq_to_kmer_string(s, k))
-    vec = TfidfVectorizer(lowercase=False, max_features=max_features)
-    X = vec.fit_transform(kmer_strings)
-    return X, vec
+def make_vectorizer(kind: str, max_features: int = 2000):
+    if kind == "bag_of_words": return CountVectorizer(lowercase=False, max_features=max_features)
+    if kind == "tfidf": return TfidfVectorizer(lowercase=False, max_features=max_features)
+    raise ValueError(f"Unknown representation: {kind}")
 
 
-def train_word2vec(df: pd.DataFrame, k: int, vector_size=50, window=5, min_count=2):
-    """Train word2vec where each 'sentence' is the list of k-mers in one sequence."""
-    sentences = [seq_to_kmers(s, k) for s in df["sequence"]]
-    model = Word2Vec(
-        sentences=sentences,
-        vector_size=vector_size,
-        window=window,
-        min_count=min_count,
-        sg=1,          # skip-gram, analogous to predicting context k-mers
-        workers=2,
-        seed=42,
-        epochs=15,
-    )
-    return model
+def fit_transform_text(train_df, test_df, k, kind, max_features=2000):
+    """Fit only on train_df, then transform both partitions."""
+    vectorizer = make_vectorizer(kind, max_features)
+    return (vectorizer.fit_transform(kmer_documents(train_df, k)),
+            vectorizer.transform(kmer_documents(test_df, k)), vectorizer)
 
 
-def sequence_embedding(seq: str, k: int, w2v_model, vector_size=50):
-    """Average word2vec k-mer vectors -> one vector per sequence (doc embedding)."""
-    kmers = seq_to_kmers(seq, k)
-    vecs = [w2v_model.wv[km] for km in kmers if km in w2v_model.wv]
-    if not vecs:
-        return np.zeros(vector_size)
-    return np.mean(vecs, axis=0)
+def fit_transform_svd_embedding(train_df, test_df, k, vector_size=50):
+    """Deterministic, lightweight distributional sequence embeddings."""
+    X_train, X_test, vectorizer = fit_transform_text(train_df, test_df, k, "tfidf")
+    components = min(vector_size, X_train.shape[0] - 1, X_train.shape[1] - 1)
+    if components < 1: return X_train.toarray(), X_test.toarray(), None, vectorizer
+    model = TruncatedSVD(n_components=components, random_state=42)
+    return model.fit_transform(X_train), model.transform(X_test), model, vectorizer
 
 
-def embed_dataset(df: pd.DataFrame, k: int, w2v_model, vector_size=50):
-    X = np.vstack([
-        sequence_embedding(s, k, w2v_model, vector_size) for s in df["sequence"]
-    ])
-    return X
+# Legacy convenience functions. New pipeline code must split before fitting.
+def bag_of_words(df, k, max_features=2000):
+    vec = make_vectorizer("bag_of_words", max_features); return vec.fit_transform(kmer_documents(df, k)), vec
 
 
-def most_similar_kmers(w2v_model, kmer: str, topn=10):
-    """Sanity check: do k-mers in similar contexts get similar embeddings?"""
-    if kmer not in w2v_model.wv:
-        return f"'{kmer}' not in vocabulary (try a more frequent k-mer)"
-    return w2v_model.wv.most_similar(kmer, topn=topn)
-
-
-if __name__ == "__main__":
-    df = pd.read_csv("data/raw/sequences.csv")
-    k = 4
-    w2v = train_word2vec(df, k=k)
-    example_kmer = df["sequence"].iloc[0][:k]
-    print(f"Most similar k-mers to '{example_kmer}':")
-    print(most_similar_kmers(w2v, example_kmer))
+def tfidf(df, k, max_features=2000):
+    vec = make_vectorizer("tfidf", max_features); return vec.fit_transform(kmer_documents(df, k)), vec

@@ -110,7 +110,7 @@ def top_discriminative_kmers(df: pd.DataFrame, k: int, top_n=15):
 
 if __name__ == "__main__":
     from data_io import prepare_dataset
-    df, rejected = prepare_dataset(pd.read_csv("data/raw/sequences.csv"))
+    df, rejected = prepare_dataset(pd.read_csv("data/real/nextvir_sequences.csv"))
     if rejected:
         print(f"Skipped {rejected} invalid sequences")
     plot_length_gc_distributions(df, "outputs/figures")

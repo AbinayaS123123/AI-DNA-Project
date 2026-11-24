@@ -1,139 +1,240 @@
 # Can AI Understand the Language of DNA/RNA?
-### Human vs. Viral sequence classification — working pipeline
 
-This is a runnable, lightweight course-project pipeline: DNA/RNA is treated as
-a four-letter language, tokenized into k-mer "words", and evaluated with
-leakage-safe classical ML. It deliberately avoids deep learning.
+### Human vs. Viral DNA Sequence Classification Using NLP and Machine Learning
 
-## What is implemented
+## Project Overview
 
-- Group-separated, fixed-seed train/test splits. K-mer vocabularies, TF-IDF
-  weights, and dense SVD sequence embeddings are fitted on training data only.
-- Bag-of-words, TF-IDF, and lightweight dense embedding comparisons with
-  logistic regression, decision tree, and random forest.
-- Held-out accuracy, weighted precision/recall/F1, CSV confusion matrices,
-  feature-importance k-mer tables, and a length/GC-content shortcut baseline.
-- Safe DNA/RNA normalization (`U` becomes `T`); ambiguous characters do not get
-  silently joined into artificial k-mers and are rejected by dataset validation.
-- A small FASTA loader for real data. It does not assign labels: you provide a
-  label and provenance group, so synthetic and real results remain distinct.
+This project explores whether DNA sequences can be treated as a language and analysed using Natural Language Processing (NLP) techniques.
 
-## ⚠️ Important: this ships with SYNTHETIC data, not real NCBI sequences
+DNA consists of four nucleotide bases: Adenine (A), Thymine (T), Guanine (G), and Cytosine (C). By breaking DNA sequences into smaller overlapping subsequences called **k-mers**, we can represent DNA using language-inspired features and investigate whether machine learning models can distinguish human and viral sequences.
 
-The environment this was built in cannot reach NCBI or any genomic database
-(only software package registries are network-accessible). So
-`src/generate_synthetic_data.py` generates stand-in sequences using a
-first-order Markov chain parameterized with **real, documented** human vs.
-viral genome statistics:
+The project uses classical machine learning techniques and compares different sequence representations to understand which patterns are useful for classification.
 
-- Human: ~41% GC content, strong **CpG suppression** (a real, well-known
-  feature of vertebrate genomes caused by methylation-driven mutation at
-  CpG sites)
-- Viral: higher AT content, no CpG suppression, different local biases
+## Datasets
 
-This is good enough to prove every stage of the pipeline works and produces
-sensible results (see `outputs/results/` and `outputs/figures/`), but it is
-**not real biological data** and should not be used for actual conclusions
-about DNA/RNA sequence patterns. Swap in real data before you write up
-results — see below.
+The project maintains two separate datasets for experimentation.
 
-## How to use real data
+### 1. Synthetic Dataset — Midsem Baseline
 
-1. Download real sequences yourself (this typically works outside this
-   sandbox):
-   - Human: [NCBI GRCh38 reference genome](https://www.ncbi.nlm.nih.gov/data-hub/genome/GCF_000001405.40/) or [UCSC Genome Browser](https://genome.ucsc.edu/) — chop into random windows.
-   - Viral: [NCBI Virus](https://www.ncbi.nlm.nih.gov/labs/virus/vssi/) — download complete genomes across many viral families.
-2. Convert each labelled FASTA file, using a biologically meaningful source
-   group (species, strain, or chromosome; never a class name):
+Location: `data/raw/`
 
-```bash
-python src/fasta_to_csv.py human.fasta --label human --source-group GRCh38 --output data/real/human.csv
-```
+The synthetic dataset was generated using a first-order Markov model parameterised using documented human and viral genome statistics.
 
-Combine the resulting CSVs into one file with columns:
-   `seq_id, sequence, label, source_group` (source_group = species/strain/
-   chromosome, used for leakage-safe splitting — see `models.py`).
-3. Run the pipeline against the combined file. Do not interpret the synthetic
-   baseline as evidence about real genomes.
+It was used during the midsem stage to:
+- Develop and test the DNA-to-k-mer processing pipeline.
+- Experiment with different NLP representations.
+- Implement and compare machine learning classifiers.
+- Test the evaluation and visualisation workflow.
 
-Tip: keep windows a consistent length across classes, and split train/test
-by `source_group` (already implemented in `models.py`) so the model can't
-just memorize near-duplicate windows from the same genome.
+**Important:** Synthetic sequences are generated data. Their results demonstrate the behaviour of the pipeline and must not be interpreted as actual biological findings.
 
-## Project structure
+### 2. Real Dataset — Human vs. Viral DNA
 
-```
-dna_ai_project/
-├── run_pipeline.py           # runs everything end-to-end, start here
+Location: `data/real/`
+
+The real dataset contains human DNA sequences and viral DNA sequences.
+
+The combined dataset is:
+
+`data/real/nextvir_sequences.csv`
+
+Expected columns:
+
+| Column | Description |
+|---|---|
+| `seq_id` | Unique sequence identifier |
+| `sequence` | DNA sequence |
+| `label` | Human or viral class |
+| `source_group` | Biological source used for group-aware splitting |
+
+The `source_group` column is important because sequences originating from the same chromosome, species, or viral accession should not be distributed across both training and testing partitions.
+
+Real-data results are evaluated separately from the synthetic baseline.
+
+## Methodology
+
+### 1. K-mer Tokenisation
+
+DNA sequences are divided into overlapping subsequences of different lengths.
+
+For example, with a sequence `ATGCAT` and k = 3:
+
+`ATG`, `TGC`, `GCA`, `CAT`
+
+The project explores k-mer sizes of 3, 4, and 6.
+
+### 2. Sequence Representations
+
+Three representations are explored:
+
+- **Bag-of-Words (BoW):** Represents sequences using k-mer occurrence counts.
+- **TF-IDF:** Weights k-mers according to their importance across sequences.
+- **Dense SVD Embeddings:** Produces lower-dimensional sequence representations using truncated Singular Value Decomposition.
+
+### 3. Machine Learning Models
+
+The following classifiers are compared:
+
+- Logistic Regression
+- Decision Tree
+- Random Forest
+
+Models are evaluated across the different sequence representations.
+
+### 4. Data Splitting and Leakage Prevention
+
+The pipeline uses group-separated, fixed-seed train/test splits.
+
+Feature vocabularies, TF-IDF weights, and SVD transformations are fitted using training data only.
+
+This helps prevent information leakage between training and testing data.
+
+For real data, the biological `source_group` must be meaningful and sufficiently diverse in both classes. A group-aware split is not reliable if one class has too few independent source groups.
+
+### 5. Evaluation
+
+The pipeline calculates:
+
+- Accuracy
+- Weighted precision
+- Weighted recall
+- Weighted F1-score
+- Confusion matrices
+- Important k-mers
+- Length and GC-content baseline comparisons
+
+### 6. Visualisation and Interpretation
+
+The project also explores:
+- K-mer frequency distributions.
+- PCA and t-SNE visualisations.
+- Model performance comparisons.
+- Important k-mer features.
+- Potential shortcuts based on sequence length and GC content.
+
+## Project Structure
+
+```text
+AI-DNA-Project/
+│
+├── data/
+│   ├── raw/                  # Synthetic midsem dataset
+│   └── real/                 # Real human and viral DNA data
+│       └── nextvir_sequences.csv
+│
+├── notebooks/                # Experimentation notebooks
+│
 ├── src/
-│   ├── generate_synthetic_data.py   # <-- swap-in point for real data
-│   ├── kmer_utils.py                # DNA -> k-mer "words"
-│   ├── explore.py                   # stats, PCA/t-SNE clustering plots
-│   ├── represent.py                 # BoW, TF-IDF, word2vec-style embeddings
-│   ├── models.py                    # train/compare classifiers (group-safe split)
-│   └── interpret.py                 # feature importance + artifact check
-├── data/raw/sequences.csv    # generated dataset (regenerate anytime)
-└── outputs/
-    ├── figures/               # PNG plots
-    └── results/               # CSV tables
+│   ├── generate_synthetic_data.py
+│   ├── fasta_to_csv.py
+│   ├── kmer_utils.py
+│   ├── explore.py
+│   ├── represent.py
+│   ├── models.py
+│   └── interpret.py
+│
+├── tests/                    # Unit tests
+│
+├── outputs/
+│   ├── figures/              # Generated visualisations
+│   └── results/              # Evaluation tables and metrics
+│
+├── run_pipeline.py
+├── requirements.txt
+└── README.md
 ```
 
-## How to run
+## Installation
+
+Create and activate a virtual environment:
 
 ```bash
-pip install numpy pandas scikit-learn matplotlib
-# preserve the shipped data and evaluate it
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+## Running the Pipeline
+
+### Synthetic Baseline
+
+To evaluate the existing synthetic dataset:
+
+```bash
 python run_pipeline.py --data data/raw/sequences.csv
-# explicitly regenerate the documented synthetic baseline, then run it
+```
+
+To regenerate the synthetic dataset and run the pipeline:
+
+```bash
 python run_pipeline.py --regenerate-synthetic
-# run unit tests
+```
+
+### Real Dataset
+
+To evaluate the real human-versus-viral dataset:
+
+```bash
+python run_pipeline.py --data data/real/nextvir_sequences.csv
+```
+
+Before running the real-data experiment, check the number of independent source groups in each class:
+
+```python
+import pandas as pd
+
+df = pd.read_csv("data/real/nextvir_sequences.csv")
+
+print(df.groupby("label")["source_group"].nunique())
+```
+
+Ensure that both classes have enough independent biological source groups for a meaningful group-separated evaluation.
+
+### Running Tests
+
+```bash
 python -m unittest discover -s tests -v
 ```
 
-The pipeline writes comparison and interpretation tables to `outputs/results/`
-and the best model's held-out confusion matrix to `outputs/figures/`. The
-legacy CSV has no biological provenance, so it receives record-level groups;
-this prevents exact record overlap but cannot establish near-duplicate safety.
-For real data, supply genuine `source_group` values.
+## Outputs
 
-Each module also runs standalone (`python src/explore.py`, etc.) once
-`data/raw/sequences.csv` exists.
+The pipeline generates result tables and visualisations under:
 
-## What each project task maps to
+- `outputs/results/`
+- `outputs/figures/`
 
-| Proposal task | Where it happens |
+These include model comparisons, confusion matrices, feature-importance tables, artifact checks, and exploratory plots.
+
+**Important:** Always identify whether an output was generated using synthetic or real data. Do not combine the two experiments when reporting performance.
+
+## Project Objectives
+
+| Objective | Implementation |
 |---|---|
-| 1. Represent DNA as language (k-mers) | `kmer_utils.py` |
-| 2. Explore the sequence language | `explore.py` (vocab stats, PCA/t-SNE) |
-| 3. NLP representations (BoW/TF-IDF/dense SVD embedding) | `represent.py` |
-| 4. Build AI/ML models | `models.py` (logreg, decision tree, random forest × 3 representations) |
-| 5. What did the AI learn? | `interpret.py` (top features + artifact check) |
-| 6. AI-generated explanations | not automated — feed `outputs/results/top_kmers_frequency_ratio.csv` to an LLM yourself and compare/verify (see project write-up) |
-| 7. Final challenge | `outputs/results/model_comparison.csv` + your own write-up |
+| Represent DNA as a language | K-mer tokenisation |
+| Explore sequence patterns | Frequency analysis and visualisation |
+| Apply NLP representations | BoW, TF-IDF and SVD |
+| Build classification models | Logistic Regression, Decision Tree and Random Forest |
+| Evaluate model performance | Accuracy, precision, recall, F1 and confusion matrices |
+| Interpret learned patterns | Important k-mers and artifact checks |
+| Compare synthetic and real experiments | Separate dataset evaluation and reporting |
 
-## Current results (on synthetic data — re-run after swapping in real data)
+## Limitations
 
-- Best models hit ~99-100% accuracy on held-out sequence groups using
-  4-mer TF-IDF / Bag-of-Words + logistic regression or random forest.
-- **Artifact check**: a trivial classifier using ONLY sequence length +
-  GC content gets ~53% accuracy (near chance), while the k-mer model gets
-  ~100% — meaning the model is using real k-mer pattern information, not
-  just exploiting length or overall composition. This is exactly the kind
-  of check task 5 in the proposal asks for, and it's worth re-running on
-  real data since real biological sequences are messier than this
-  synthetic set.
-- Top human-associated 4-mers include `TATA`-like AT-rich motifs; top
-  viral-associated 4-mers are more GC/pyrimidine-rich (`CTCT`, `TCTC`,
-  `CTGC`) — plausible given the synthetic generative model, but **these
-  specific results are an artifact of the synthetic data and will change
-  completely with real sequences.**
+- Synthetic sequences do not capture the full complexity of real biological genomes.
+- Human and viral sequences may differ in length, composition, and biological structure.
+- Group-aware evaluation depends on having sufficient independent source groups.
+- High classification performance alone does not establish that a model has learned biologically meaningful motifs.
+- Important k-mers must be interpreted cautiously and should not automatically be treated as biological discoveries.
+- The SVD representation is a lightweight dimensionality-reduction baseline, not a biological foundation model.
 
-## Known limitations / things to fix with real data
+## Final Goal
 
-- Synthetic sequences use only a first-order Markov model — real genomes
-  have much richer higher-order structure (codons, motifs, repeats).
-- No true "coding vs. non-coding" distinction is modeled — flagged in the
-  main conversation as a likely real confound for human vs. viral data;
-  check for it once you have real sequences.
-- The dense embedding is trained only on the training partition. It is a
-  lightweight SVD baseline, not a biological foundation model.
+The project investigates whether NLP-inspired representations can capture useful patterns in DNA sequences and distinguish human from viral DNA.
+
+By comparing synthetic and real datasets, different sequence representations, and multiple machine learning models, the project aims to understand both the capabilities and limitations of treating DNA as a language.

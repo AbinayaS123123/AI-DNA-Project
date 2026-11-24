@@ -8,37 +8,15 @@ This project explores whether DNA sequences can be treated as a language and ana
 
 DNA consists of four nucleotide bases: Adenine (A), Thymine (T), Guanine (G), and Cytosine (C). By breaking DNA sequences into smaller overlapping subsequences called **k-mers**, we can represent DNA using language-inspired features and investigate whether machine learning models can distinguish human and viral sequences.
 
-The project uses classical machine learning techniques and compares different sequence representations to understand which patterns are useful for classification.
+The project applies classical machine learning techniques to compare different sequence representations, identify patterns, and evaluate their usefulness for DNA sequence classification.
 
-## Datasets
+## Dataset
 
-The project maintains two separate datasets for experimentation.
+The project primarily uses a real DNA sequence dataset containing human and viral sequences.
 
-### 1. Synthetic Dataset — Midsem Baseline
+**Location:** `data/real/`
 
-Location: `data/raw/`
-
-The synthetic dataset was generated using a first-order Markov model parameterised using documented human and viral genome statistics.
-
-It was used during the midsem stage to:
-- Develop and test the DNA-to-k-mer processing pipeline.
-- Experiment with different NLP representations.
-- Implement and compare machine learning classifiers.
-- Test the evaluation and visualisation workflow.
-
-**Important:** Synthetic sequences are generated data. Their results demonstrate the behaviour of the pipeline and must not be interpreted as actual biological findings.
-
-### 2. Real Dataset — Human vs. Viral DNA
-
-Location: `data/real/`
-
-The real dataset contains human DNA sequences and viral DNA sequences.
-
-The combined dataset is:
-
-`data/real/nextvir_sequences.csv`
-
-Expected columns:
+The combined dataset, `nextvir_sequences.csv`, contains the following columns:
 
 | Column | Description |
 |---|---|
@@ -49,7 +27,7 @@ Expected columns:
 
 The `source_group` column is important because sequences originating from the same chromosome, species, or viral accession should not be distributed across both training and testing partitions.
 
-Real-data results are evaluated separately from the synthetic baseline.
+A small synthetic dataset is also retained in `data/raw/` for preliminary pipeline testing and baseline experimentation. It is separate from the real-data experiments and is not used to draw biological conclusions.
 
 ## Methodology
 
@@ -57,7 +35,7 @@ Real-data results are evaluated separately from the synthetic baseline.
 
 DNA sequences are divided into overlapping subsequences of different lengths.
 
-For example, with a sequence `ATGCAT` and k = 3:
+For example, given the sequence `ATGCAT` and k = 3:
 
 `ATG`, `TGC`, `GCA`, `CAT`
 
@@ -73,44 +51,43 @@ Three representations are explored:
 
 ### 3. Machine Learning Models
 
-The following classifiers are compared:
+The following classifiers are compared across the different sequence representations:
 
 - Logistic Regression
 - Decision Tree
 - Random Forest
 
-Models are evaluated across the different sequence representations.
-
 ### 4. Data Splitting and Leakage Prevention
 
 The pipeline uses group-separated, fixed-seed train/test splits.
 
-Feature vocabularies, TF-IDF weights, and SVD transformations are fitted using training data only.
+K-mer vocabularies, TF-IDF weights, and SVD transformations are fitted using training data only.
 
-This helps prevent information leakage between training and testing data.
+This helps prevent information leakage between training and testing partitions.
 
 For real data, the biological `source_group` must be meaningful and sufficiently diverse in both classes. A group-aware split is not reliable if one class has too few independent source groups.
 
-### 5. Evaluation
+### 5. Model Evaluation
 
-The pipeline calculates:
+The pipeline evaluates model performance using:
 
 - Accuracy
 - Weighted precision
 - Weighted recall
 - Weighted F1-score
 - Confusion matrices
-- Important k-mers
-- Length and GC-content baseline comparisons
+
+It also examines feature importance and compares the full k-mer model against a baseline using only sequence length and GC content.
 
 ### 6. Visualisation and Interpretation
 
-The project also explores:
+The project explores:
+
 - K-mer frequency distributions.
 - PCA and t-SNE visualisations.
 - Model performance comparisons.
 - Important k-mer features.
-- Potential shortcuts based on sequence length and GC content.
+- Potential classification shortcuts based on sequence length and GC content.
 
 ## Project Structure
 
@@ -118,7 +95,7 @@ The project also explores:
 AI-DNA-Project/
 │
 ├── data/
-│   ├── raw/                  # Synthetic midsem dataset
+│   ├── raw/                  # Synthetic baseline data
 │   └── real/                 # Real human and viral DNA data
 │       └── nextvir_sequences.csv
 │
@@ -153,7 +130,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Install dependencies:
+Install the required dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -161,29 +138,15 @@ python -m pip install -r requirements.txt
 
 ## Running the Pipeline
 
-### Synthetic Baseline
+### Real Dataset — Human vs. Viral DNA
 
-To evaluate the existing synthetic dataset:
-
-```bash
-python run_pipeline.py --data data/raw/sequences.csv
-```
-
-To regenerate the synthetic dataset and run the pipeline:
-
-```bash
-python run_pipeline.py --regenerate-synthetic
-```
-
-### Real Dataset
-
-To evaluate the real human-versus-viral dataset:
+To run the pipeline on the real dataset:
 
 ```bash
 python run_pipeline.py --data data/real/nextvir_sequences.csv
 ```
 
-Before running the real-data experiment, check the number of independent source groups in each class:
+Before running the experiment, check the number of independent source groups in each class:
 
 ```python
 import pandas as pd
@@ -194,6 +157,20 @@ print(df.groupby("label")["source_group"].nunique())
 ```
 
 Ensure that both classes have enough independent biological source groups for a meaningful group-separated evaluation.
+
+### Synthetic Baseline
+
+The synthetic dataset can be used for preliminary testing:
+
+```bash
+python run_pipeline.py --data data/raw/sequences.csv
+```
+
+To regenerate it:
+
+```bash
+python run_pipeline.py --regenerate-synthetic
+```
 
 ### Running Tests
 
@@ -208,9 +185,15 @@ The pipeline generates result tables and visualisations under:
 - `outputs/results/`
 - `outputs/figures/`
 
-These include model comparisons, confusion matrices, feature-importance tables, artifact checks, and exploratory plots.
+These include:
 
-**Important:** Always identify whether an output was generated using synthetic or real data. Do not combine the two experiments when reporting performance.
+- Model comparison tables.
+- Confusion matrices.
+- Feature-importance k-mer tables.
+- Length and GC-content baseline comparisons.
+- Exploratory visualisations.
+
+Results should always be associated with the dataset used to generate them. Synthetic and real-data experiments must be reported separately.
 
 ## Project Objectives
 
@@ -222,19 +205,18 @@ These include model comparisons, confusion matrices, feature-importance tables, 
 | Build classification models | Logistic Regression, Decision Tree and Random Forest |
 | Evaluate model performance | Accuracy, precision, recall, F1 and confusion matrices |
 | Interpret learned patterns | Important k-mers and artifact checks |
-| Compare synthetic and real experiments | Separate dataset evaluation and reporting |
+| Investigate human vs. viral DNA | Classification using real sequence data |
 
 ## Limitations
 
-- Synthetic sequences do not capture the full complexity of real biological genomes.
 - Human and viral sequences may differ in length, composition, and biological structure.
 - Group-aware evaluation depends on having sufficient independent source groups.
 - High classification performance alone does not establish that a model has learned biologically meaningful motifs.
 - Important k-mers must be interpreted cautiously and should not automatically be treated as biological discoveries.
 - The SVD representation is a lightweight dimensionality-reduction baseline, not a biological foundation model.
 
-## Final Goal
+## Conclusion
 
-The project investigates whether NLP-inspired representations can capture useful patterns in DNA sequences and distinguish human from viral DNA.
+This project investigates whether NLP-inspired representations can capture useful patterns in DNA sequences and distinguish human from viral DNA.
 
-By comparing synthetic and real datasets, different sequence representations, and multiple machine learning models, the project aims to understand both the capabilities and limitations of treating DNA as a language.
+By combining k-mer tokenisation, multiple sequence representations, classical machine learning models, and feature interpretation, the project explores the potential of language-inspired approaches for biological sequence analysis.
